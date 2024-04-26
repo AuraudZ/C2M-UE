@@ -21,6 +21,10 @@
 #include "UObject/SavePackage.h"
 #include <Factories/TextureFactory.h>
 #include <Misc/FileHelper.h>
+#include "Editor/UnrealEd/Classes/Factories/MaterialFactoryNew.h"
+#include "Editor/UnrealEd/Classes/Factories/MaterialInstanceConstantFactoryNew.h"
+#include <Materials/MaterialInstanceConstant.h>
+
 
 
 static const FName C2M_v2TabName("C2M_v2");
@@ -110,7 +114,7 @@ TSharedRef<SDockTab> FC2M_v2Module::OnSpawnPluginTab(const FSpawnTabArgs& SpawnT
 					TArray<FString> OutFileName;
 					bool result = OpenFileDialog(DialogTitle, DefaultPath, FileTypes, OutFileName);
 					IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
-
+					TArray<UMaterialInterface*> Materials{};
 					if (result) {
 						path = OutFileName[0];
 						UE_LOG(LogTemp, Warning, TEXT("File path: %s"), *path);
@@ -162,7 +166,7 @@ TSharedRef<SDockTab> FC2M_v2Module::OnSpawnPluginTab(const FSpawnTabArgs& SpawnT
 							SrcModel.ReductionSettings.bRecalculateNormals = false;
 							if (!rawMesh.IsValid()) {
 								UE_LOG(LogTemp, Warning, TEXT("RawMesh is not valid!"));
-								return FReply::Handled();
+								break;
 							}
 							TArray<FStaticMeshSourceModel> temp{};
 							SrcModel.SaveRawMesh(rawMesh);
@@ -173,7 +177,22 @@ TSharedRef<SDockTab> FC2M_v2Module::OnSpawnPluginTab(const FSpawnTabArgs& SpawnT
 
 
 							// Do the materials
+							TArray<FStaticMaterial>& materials = StaticMesh->GetStaticMaterials();
+							materials.Empty();
+							for (int i = 0; i < Materials.Num(); i++)
+								materials.Add(FStaticMaterial(Materials[i]));
 							
+							int32 NumSections = Materials.Num();
+
+							// Set up the SectionInfoMap to enable collision
+							for (int32 SectionIdx = 0; SectionIdx < NumSections; ++SectionIdx)
+							{
+								FMeshSectionInfoMap& sectionInfoMap = StaticMesh->GetSectionInfoMap();
+								FMeshSectionInfo Info = sectionInfoMap.Get(0, SectionIdx);
+								Info.MaterialIndex = SectionIdx;
+								Info.bEnableCollision = true;
+								sectionInfoMap.Set(0, SectionIdx, Info);
+							}
 
 							StaticMesh->Build(false);
 
@@ -183,6 +202,8 @@ TSharedRef<SDockTab> FC2M_v2Module::OnSpawnPluginTab(const FSpawnTabArgs& SpawnT
 							StaticMesh->PostEditChange();
 
 							Package->SetDirtyFlag(true);
+
+							ModelNamePackage.EndsWith(TEXT("/")) ? ModelNamePackage = ModelNamePackage.LeftChop(1) : ModelNamePackage = ModelNamePackage;
 
 							FString PackageFileName = FPackageName::LongPackageNameToFilename(ModelNamePackage, FPackageName::GetAssetPackageExtension());
 
@@ -200,14 +221,32 @@ TSharedRef<SDockTab> FC2M_v2Module::OnSpawnPluginTab(const FSpawnTabArgs& SpawnT
 
 						}
 
+						UMaterialInstanceConstantFactoryNew* Factory = NewObject<UMaterialInstanceConstantFactoryNew>();
+
+						// Find the master mat
 
 						
 						auto mesh = map.meshes[0];
-						FString PackageName = TEXT("/Game/") + (FString(UTF8_TO_TCHAR("C2M/"))) + TEXT("Textures/");
+
+
+						// Find B02-MasterMat in the game
+						FString PackageName = TEXT("/Game/") + (FString(UTF8_TO_TCHAR("B02-Master")));
+						
+						FString normalParam = TEXT("Normal");
+						FString baseColor = TEXT("Diffuse");
+
+						auto sourceMaterial = LoadObject<UMaterial>(nullptr, *PackageName);
+
+						Factory->InitialParent = sourceMaterial;
+
+
+						PackageName = TEXT("/Game/") + (FString(UTF8_TO_TCHAR("C2M/"))) + TEXT("Textures/");
 						UPackage* CommonPackage = CreatePackage(*PackageName);
 						CommonPackage->FullyLoad();
 						CommonPackage->Modify();
 						for (auto mat : map.Materials) {
+							UTexture* BaseColorTexture = nullptr;
+							UTexture* NormalTexture = nullptr;
 							for (auto texture : mat.second.Textures) {
 								try {
 									auto tex = texture.Name;
@@ -236,8 +275,6 @@ TSharedRef<SDockTab> FC2M_v2Module::OnSpawnPluginTab(const FSpawnTabArgs& SpawnT
 									TextureName = TextureName.Replace(TEXT("&"), TEXT("_"));
 									TextureName = TextureName.Replace(TEXT(" "), TEXT("_"));
 									TextureName = TextureName.Replace(TEXT("~"), TEXT("_"));
-
-									
 
 
 									FString TexturePackageName = TEXT("/Game/") + (FString(UTF8_TO_TCHAR("C2M/"))) + TextureName;
@@ -325,13 +362,24 @@ TSharedRef<SDockTab> FC2M_v2Module::OnSpawnPluginTab(const FSpawnTabArgs& SpawnT
 									fclose(f);
 
 
-
+									if (texture.Type == "colorMap") {
+										BaseColorTexture = Texture;
+									}
+									else if (texture.Type == "normalMap") {
+										NormalTexture = Texture;
+									}
+									else {
+										UE_LOG(LogTemp, Warning, TEXT("Texture type not recognized! %s"), FString(UTF8_TO_TCHAR(texture.Type.c_str())));
+									}
 
 
 									TexturePackage->MarkPackageDirty();
 									FAssetRegistryModule::AssetCreated(Texture);
 									Texture->PostEditChange();
 									TexturePackage->SetDirtyFlag(true);
+
+									TexturePackageName.EndsWith(TEXT("/")) ? TexturePackageName = TexturePackageName.LeftChop(1) : TexturePackageName = TexturePackageName;
+
 
 									FString PackageFileName = FPackageName::LongPackageNameToFilename(TexturePackageName, FPackageName::GetAssetPackageExtension());
 
@@ -347,11 +395,67 @@ TSharedRef<SDockTab> FC2M_v2Module::OnSpawnPluginTab(const FSpawnTabArgs& SpawnT
 									else {
 										UE_LOG(LogTemp, Warning, TEXT("Failed to save Texture!"));
 									}
+
+
+									// Create a new material instance 
+								
+									
 								}
 								catch (...) {
 									UE_LOG(LogTemp, Error, TEXT("Something went catastrophically wrong trying to save an unreal package, In unreal code."));
 								}
 							}
+
+							FString MaterialInstanceName = (FString(UTF8_TO_TCHAR(mat.first.c_str())));
+							MaterialInstanceName = MaterialInstanceName.Replace(TEXT("*"), TEXT("X"));
+							MaterialInstanceName = MaterialInstanceName.Replace(TEXT("?"), TEXT("Q"));
+							MaterialInstanceName = MaterialInstanceName.Replace(TEXT("!"), TEXT("I"));
+							MaterialInstanceName = MaterialInstanceName.Replace(TEXT(":"), TEXT("_"));
+							MaterialInstanceName = MaterialInstanceName.Replace(TEXT("."), TEXT("-"));
+							MaterialInstanceName = MaterialInstanceName.Replace(TEXT("&"), TEXT("_"));
+							MaterialInstanceName = MaterialInstanceName.Replace(TEXT(" "), TEXT("_"));
+							MaterialInstanceName = MaterialInstanceName.Replace(TEXT("~"), TEXT("_"));
+
+							
+
+							FString MaterialInstancePackageName = TEXT("/Game/") + (FString(UTF8_TO_TCHAR("C2M/"))) + MaterialInstanceName;
+							UPackage* MaterialInstancePackage = CreatePackage(*MaterialInstancePackageName);
+							MaterialInstancePackage->FullyLoad();
+							MaterialInstancePackage->Modify();
+
+							UMaterialInstanceConstant* MaterialInstance = Cast<UMaterialInstanceConstant>(Factory->FactoryCreateNew(UMaterialInstanceConstant::StaticClass(), MaterialInstancePackage, FName(MaterialInstanceName), EObjectFlags::RF_Public | EObjectFlags::RF_Standalone, nullptr, GWarn));
+							MaterialInstance->SetParentEditorOnly(sourceMaterial);
+							if (NormalTexture == nullptr) {
+								UE_LOG(LogTemp, Warning, TEXT("Normal Texture is null!"));
+								break;
+							}
+							if (BaseColorTexture == nullptr) {
+								UE_LOG(LogTemp, Warning, TEXT("Base Color Texture is null!"));
+								break;
+							}
+							MaterialInstance->SetTextureParameterValueEditorOnly(FName(*normalParam), NormalTexture);
+							MaterialInstance->SetTextureParameterValueEditorOnly(FName(*baseColor), BaseColorTexture);
+
+							MaterialInstance->MarkPackageDirty();
+							FAssetRegistryModule::AssetCreated(MaterialInstance);
+							MaterialInstance->PostEditChange();
+							MaterialInstancePackage->SetDirtyFlag(true);
+
+							MaterialInstancePackageName.EndsWith(TEXT("/")) ? MaterialInstancePackageName = MaterialInstancePackageName.LeftChop(1) : MaterialInstancePackageName = MaterialInstancePackageName;
+
+							auto PackageFileName = FPackageName::LongPackageNameToFilename(MaterialInstancePackageName, FPackageName::GetAssetPackageExtension());
+							FSavePackageArgs SaveArgs;
+							SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+							SaveArgs.Error = GError;
+							SaveArgs.bWarnOfLongFilename = false;
+							SaveArgs.SaveFlags = SAVE_None;
+							if (UPackage::SavePackage(MaterialInstancePackage, MaterialInstance, *MaterialInstancePackageName, SaveArgs)) {
+								UE_LOG(LogTemp, Warning, TEXT("Saved Material Instance!"));
+							}
+							else {
+								UE_LOG(LogTemp, Warning, TEXT("Failed to save Material Instance!"));
+							}
+
 						}
 
 
@@ -426,6 +530,8 @@ TSharedRef<SDockTab> FC2M_v2Module::OnSpawnPluginTab(const FSpawnTabArgs& SpawnT
 						StaticMesh->PostEditChange();
 
 						Package->SetDirtyFlag(true);
+
+						NewPackageName.EndsWith(TEXT("/")) ? NewPackageName = NewPackageName.LeftChop(1) : NewPackageName = NewPackageName;
 
 						FString PackageFileName = FPackageName::LongPackageNameToFilename(NewPackageName, FPackageName::GetAssetPackageExtension());
 
