@@ -7,8 +7,9 @@ public class C2M_v2 : ModuleRules
 	public C2M_v2(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-		
-		PublicIncludePaths.AddRange(
+        IWYUSupport = IWYUSupport.Full;
+
+        PublicIncludePaths.AddRange(
 			new string[] {
 				// ... add public include paths required here ...
 			}
@@ -45,7 +46,8 @@ public class C2M_v2 : ModuleRules
 				"Engine",
 				"Slate",
 				"SlateCore",
-				"RawMesh",
+                "PropertyEditor",
+                "RawMesh",
                 "RenderCore",
                 "DesktopPlatform",
                 "RHI",
