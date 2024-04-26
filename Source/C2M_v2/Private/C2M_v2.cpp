@@ -24,6 +24,7 @@
 #include "Editor/UnrealEd/Classes/Factories/MaterialFactoryNew.h"
 #include "Editor/UnrealEd/Classes/Factories/MaterialInstanceConstantFactoryNew.h"
 #include <Materials/MaterialInstanceConstant.h>
+#include "EditorAssetLibrary.h"
 
 
 
@@ -124,129 +125,34 @@ TSharedRef<SDockTab> FC2M_v2Module::OnSpawnPluginTab(const FSpawnTabArgs& SpawnT
 						auto name_char = UTF8_TO_TCHAR(map.Name.c_str());
 						UE_LOG(LogTemp, Warning, TEXT("Map Name: %s"), name_char);
 						UE_LOG(LogTemp, Warning, TEXT("Mesh Name: %s"), *FString(UTF8_TO_TCHAR(map.meshes[0].Name.c_str())));
-						for (auto mesh: map.meshes) {
-							FString ModelNamePackage = TEXT("/Game/") + (FString(UTF8_TO_TCHAR(map.Name.c_str()))) + TEXT("/") + (FString(UTF8_TO_TCHAR(mesh.Name.c_str())));
-							UE_LOG(LogTemp, Warning, TEXT("New Package Name: %s"), *ModelNamePackage);
-							UPackage* Package = CreatePackage(*ModelNamePackage);
-							FName meshName = FName(*FString(UTF8_TO_TCHAR(mesh.Name.c_str())));
-							auto StaticMesh = NewObject<UStaticMesh>(Package, meshName, RF_Public | RF_Standalone);
-							Package->FullyLoad();
-							Package->Modify();
-							FRawMesh rawMesh;
-							TArray<FVector> Vertices;
-							rawMesh.VertexPositions.AddZeroed(mesh.Vertices.size());
-							for (int i = 0; i < mesh.Vertices.size(); i++) {
-								FVector vertex = FVector(mesh.Vertices[i].X, mesh.Vertices[i].Y, mesh.Vertices[i].Z);
-								rawMesh.VertexPositions[i] = FVector3f(vertex);
-								Vertices.Add(vertex);
-							}
-							for (int i = 0; i < mesh.Surfaces.size(); i++) {
-								auto surface = mesh.Surfaces[i];
-								for (int j = 0; j < surface.Faces.size(); j++) {
-									auto face = surface.Faces[j];
-									for (int k = 0; k < 3; k++) {
-										int vertexIndex = face[k];
-										FVector normal = FVector(mesh.Normals[vertexIndex]);
-										rawMesh.WedgeIndices.Add(vertexIndex);
-										rawMesh.WedgeTexCoords[0].Add(FVector2f(mesh.UVs[vertexIndex][0][0], mesh.UVs[vertexIndex][0][1]));
-										rawMesh.WedgeTangentX.Add(FVector3f::ZeroVector);
-										rawMesh.WedgeTangentY.Add(FVector3f::ZeroVector);
-										rawMesh.WedgeTangentZ.Add(FVector3f(normal));
-										rawMesh.WedgeColors.Add(mesh.Colors[vertexIndex]);
-									}
-									rawMesh.FaceMaterialIndices.Add(j);
-									rawMesh.FaceSmoothingMasks.Add(0);
-								}
-							}
-							FStaticMeshSourceModel SrcModel{};
-							SrcModel.CreateSubObjects(StaticMesh);
-							SrcModel.BuildSettings.bRecomputeNormals = false;
-							SrcModel.BuildSettings.bRecomputeTangents = false;
-							SrcModel.BuildSettings.bRemoveDegenerates = true;
-							SrcModel.ReductionSettings.bRecalculateNormals = false;
-							if (!rawMesh.IsValid()) {
-								UE_LOG(LogTemp, Warning, TEXT("RawMesh is not valid!"));
-								break;
-							}
-							TArray<FStaticMeshSourceModel> temp{};
-							SrcModel.SaveRawMesh(rawMesh);
-
-							temp.Add(MoveTemp(SrcModel));
-
-							StaticMesh->SetSourceModels(MoveTemp(temp));
-
-
-							// Do the materials
-							TArray<FStaticMaterial>& materials = StaticMesh->GetStaticMaterials();
-							materials.Empty();
-							for (int i = 0; i < Materials.Num(); i++)
-								materials.Add(FStaticMaterial(Materials[i]));
-							
-							int32 NumSections = Materials.Num();
-
-							// Set up the SectionInfoMap to enable collision
-							for (int32 SectionIdx = 0; SectionIdx < NumSections; ++SectionIdx)
-							{
-								FMeshSectionInfoMap& sectionInfoMap = StaticMesh->GetSectionInfoMap();
-								FMeshSectionInfo Info = sectionInfoMap.Get(0, SectionIdx);
-								Info.MaterialIndex = SectionIdx;
-								Info.bEnableCollision = true;
-								sectionInfoMap.Set(0, SectionIdx, Info);
-							}
-
-							StaticMesh->Build(false);
-
-							StaticMesh->MarkPackageDirty();
-							FAssetRegistryModule::AssetCreated(StaticMesh);
-
-							StaticMesh->PostEditChange();
-
-							Package->SetDirtyFlag(true);
-
-							ModelNamePackage.EndsWith(TEXT("/")) ? ModelNamePackage = ModelNamePackage.LeftChop(1) : ModelNamePackage = ModelNamePackage;
-
-							FString PackageFileName = FPackageName::LongPackageNameToFilename(ModelNamePackage, FPackageName::GetAssetPackageExtension());
-
-							FSavePackageArgs SaveArgs;
-							SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-							SaveArgs.Error = GError;
-							SaveArgs.bWarnOfLongFilename = false;
-
-							if (UPackage::SavePackage(Package, StaticMesh, *ModelNamePackage, SaveArgs)) {
-								UE_LOG(LogTemp, Warning, TEXT("Saved Static Mesh!"));
-							}
-							else {
-								UE_LOG(LogTemp, Warning, TEXT("Failed to save Static Mesh!"));
-							}
-
-						}
-
+					
 						UMaterialInstanceConstantFactoryNew* Factory = NewObject<UMaterialInstanceConstantFactoryNew>();
 
 						// Find the master mat
 
 						
-						auto mesh = map.meshes[0];
-
 
 						// Find B02-MasterMat in the game
 						FString PackageName = TEXT("/Game/") + (FString(UTF8_TO_TCHAR("B02-Master")));
 						
 						FString normalParam = TEXT("Normal");
 						FString baseColor = TEXT("Diffuse");
+						FString specular = TEXT("Spec");
 
 						auto sourceMaterial = LoadObject<UMaterial>(nullptr, *PackageName);
 
 						Factory->InitialParent = sourceMaterial;
 
 
-						PackageName = TEXT("/Game/") + (FString(UTF8_TO_TCHAR("C2M/"))) + TEXT("Textures/");
+						PackageName = TEXT("/Game/") + (FString(UTF8_TO_TCHAR("C2M/"))) + TEXT("Textures");
 						UPackage* CommonPackage = CreatePackage(*PackageName);
 						CommonPackage->FullyLoad();
 						CommonPackage->Modify();
 						for (auto mat : map.Materials) {
 							UTexture* BaseColorTexture = nullptr;
 							UTexture* NormalTexture = nullptr;
+							UTexture* SpecularTexture = nullptr;
+
 							for (auto texture : mat.second.Textures) {
 								try {
 									auto tex = texture.Name;
@@ -328,19 +234,6 @@ TSharedRef<SDockTab> FC2M_v2Module::OnSpawnPluginTab(const FSpawnTabArgs& SpawnT
 										break;
 									}
 									decoder.postProcessImage(header, image);
-									Texture->PlatformData = new FTexturePlatformData();
-									Texture->PlatformData->SizeX = header.width;
-									Texture->PlatformData->SizeY = header.height;
-									Texture->PlatformData->PixelFormat = EPixelFormat::PF_B8G8R8A8;	
-									Texture->PlatformData->Mips.Add(new FTexture2DMipMap());
-
-									FTexture2DMipMap* MipMap = &Texture->PlatformData->Mips[0];
-									MipMap->SizeZ = 1;
-									MipMap->SizeX = header.width;
-									MipMap->SizeY = header.height;
-									FByteBulkData* ImageData = &MipMap->BulkData;
-									ImageData->Lock(LOCK_READ_WRITE);
-									auto image_data = ImageData->Realloc(image.rowstride * header.height);
 
 									// Flip the colors
 									for (int i = 0; i < header.height; i++)
@@ -355,27 +248,47 @@ TSharedRef<SDockTab> FC2M_v2Module::OnSpawnPluginTab(const FSpawnTabArgs& SpawnT
 										}
 									}
 
-									FMemory::Memcpy(image_data, Data.GetData(),(uint64)image.rowstride * header.height);
+									Texture->PlatformData = new FTexturePlatformData();
+									Texture->PlatformData->SizeX = header.width;
+									Texture->PlatformData->SizeY = header.height;
+									Texture->PlatformData->PixelFormat = EPixelFormat::PF_B8G8R8A8;	
+									Texture->SRGB = true;
+									Texture->CompressionSettings = TextureCompressionSettings::TC_Default;
+									Texture->MipGenSettings = TextureMipGenSettings::TMGS_LeaveExistingMips;
+									Texture->AddressX = TextureAddress::TA_Clamp;
+									Texture->AddressY = TextureAddress::TA_Clamp;
+									Texture->PlatformData->Mips.Add(new FTexture2DMipMap());
 
-									
-									ImageData->Unlock();
+									FTexture2DMipMap* MipMap = &Texture->PlatformData->Mips[0];
+									MipMap->SizeZ = 1;
+									MipMap->SizeX = header.width;
+									MipMap->SizeY = header.height;
+									Texture->Source.Init(header.width, header.height, 1, 1, ETextureSourceFormat::TSF_BGRA8, image.pixels);
 									fclose(f);
 
 
-									if (texture.Type == "colorMap") {
+									// check if its contains color 
+									if (strstr(texture.Type.c_str(), "color")) {
+										Texture->CompressionSettings = TextureCompressionSettings::TC_Default;
 										BaseColorTexture = Texture;
 									}
 									else if (texture.Type == "normalMap") {
+										Texture->CompressionSettings = TextureCompressionSettings::TC_Normalmap;
 										NormalTexture = Texture;
 									}
+									else if (texture.Type._Starts_with("spec")) {
+										Texture->CompressionSettings = TextureCompressionSettings::TC_Default;
+										SpecularTexture = Texture;
+									}
 									else {
-										UE_LOG(LogTemp, Warning, TEXT("Texture type not recognized! %s"), FString(UTF8_TO_TCHAR(texture.Type.c_str())));
+										UE_LOG(LogTemp, Warning, TEXT("Texture type not recognized! %s"),texture.Type.c_str());
 									}
 
 
 									TexturePackage->MarkPackageDirty();
 									FAssetRegistryModule::AssetCreated(Texture);
 									Texture->PostEditChange();
+									TexturePackage->PostEditChange();
 									TexturePackage->SetDirtyFlag(true);
 
 									TexturePackageName.EndsWith(TEXT("/")) ? TexturePackageName = TexturePackageName.LeftChop(1) : TexturePackageName = TexturePackageName;
@@ -396,10 +309,9 @@ TSharedRef<SDockTab> FC2M_v2Module::OnSpawnPluginTab(const FSpawnTabArgs& SpawnT
 										UE_LOG(LogTemp, Warning, TEXT("Failed to save Texture!"));
 									}
 
-
-									// Create a new material instance 
-								
-									
+									FAssetRegistryModule::AssetSaved(*Texture);
+									Texture->PostEditImport();
+									TexturePackage->PostEditImport();									
 								}
 								catch (...) {
 									UE_LOG(LogTemp, Error, TEXT("Something went catastrophically wrong trying to save an unreal package, In unreal code."));
@@ -416,26 +328,33 @@ TSharedRef<SDockTab> FC2M_v2Module::OnSpawnPluginTab(const FSpawnTabArgs& SpawnT
 							MaterialInstanceName = MaterialInstanceName.Replace(TEXT(" "), TEXT("_"));
 							MaterialInstanceName = MaterialInstanceName.Replace(TEXT("~"), TEXT("_"));
 
-							
+							//UEditorAssetLibrary::DoesAssetExist
+
 
 							FString MaterialInstancePackageName = TEXT("/Game/") + (FString(UTF8_TO_TCHAR("C2M/"))) + MaterialInstanceName;
+
+							if (UEditorAssetLibrary::DoesAssetExist(MaterialInstancePackageName)) {
+								UE_LOG(LogTemp, Warning, TEXT("Material Instance already exists!"));
+								continue;
+							}
 							UPackage* MaterialInstancePackage = CreatePackage(*MaterialInstancePackageName);
 							MaterialInstancePackage->FullyLoad();
 							MaterialInstancePackage->Modify();
 
 							UMaterialInstanceConstant* MaterialInstance = Cast<UMaterialInstanceConstant>(Factory->FactoryCreateNew(UMaterialInstanceConstant::StaticClass(), MaterialInstancePackage, FName(MaterialInstanceName), EObjectFlags::RF_Public | EObjectFlags::RF_Standalone, nullptr, GWarn));
 							MaterialInstance->SetParentEditorOnly(sourceMaterial);
-							if (NormalTexture == nullptr) {
-								UE_LOG(LogTemp, Warning, TEXT("Normal Texture is null!"));
-								break;
-							}
 							if (BaseColorTexture == nullptr) {
-								UE_LOG(LogTemp, Warning, TEXT("Base Color Texture is null!"));
-								break;
+								UE_LOG(LogTemp, Warning, TEXT("No base color!"));
+								continue;
 							}
-							MaterialInstance->SetTextureParameterValueEditorOnly(FName(*normalParam), NormalTexture);
 							MaterialInstance->SetTextureParameterValueEditorOnly(FName(*baseColor), BaseColorTexture);
+							if (NormalTexture != nullptr) {
 
+								MaterialInstance->SetTextureParameterValueEditorOnly(FName(*normalParam), NormalTexture);
+							}
+							if (SpecularTexture != nullptr) {
+								MaterialInstance->SetTextureParameterValueEditorOnly(FName(*specular), SpecularTexture);
+							}
 							MaterialInstance->MarkPackageDirty();
 							FAssetRegistryModule::AssetCreated(MaterialInstance);
 							MaterialInstance->PostEditChange();
@@ -456,9 +375,145 @@ TSharedRef<SDockTab> FC2M_v2Module::OnSpawnPluginTab(const FSpawnTabArgs& SpawnT
 								UE_LOG(LogTemp, Warning, TEXT("Failed to save Material Instance!"));
 							}
 
+							FAssetRegistryModule::AssetSaved(*MaterialInstance);
+							MaterialInstance->PostEditImport();
+							MaterialInstancePackage->PostEditImport();
+							Materials.Add(MaterialInstance);
+
+
 						}
 
 
+						// import all static meshes and add materials for them
+						for (auto mesh : map.meshes) {
+							FString ModelNamePackage = TEXT("/Game/") + (FString(UTF8_TO_TCHAR(map.Name.c_str()))) + TEXT("/") + (FString(UTF8_TO_TCHAR(mesh.Name.c_str())));
+							UE_LOG(LogTemp, Warning, TEXT("New Package Name: %s"), *ModelNamePackage);
+							UPackage* Package = CreatePackage(*ModelNamePackage);
+							FName meshName = FName(*FString(UTF8_TO_TCHAR(mesh.Name.c_str())));
+							auto StaticMesh = NewObject<UStaticMesh>(Package, meshName, RF_Public | RF_Standalone);
+							Package->FullyLoad();
+							Package->Modify();
+							FRawMesh rawMesh;
+							TArray<FVector> Vertices;
+							rawMesh.VertexPositions.AddZeroed(mesh.Vertices.size());
+							for (int i = 0; i < mesh.Vertices.size(); i++) {
+								FVector vertex = FVector(mesh.Vertices[i].X, mesh.Vertices[i].Y, mesh.Vertices[i].Z);
+								rawMesh.VertexPositions[i] = FVector3f(vertex);
+								Vertices.Add(vertex);
+							}
+							for (int i = 0; i < mesh.Surfaces.size(); i++) {
+								auto surface = mesh.Surfaces[i];
+								for (int j = 0; j < surface.Faces.size(); j++) {
+									auto face = surface.Faces[j];
+									for (int k = 0; k < 3; k++) {
+										int vertexIndex = face[k];
+										FVector normal = FVector(mesh.Normals[vertexIndex]);
+										rawMesh.WedgeIndices.Add(vertexIndex);
+										rawMesh.WedgeTangentX.Add(FVector3f::ZeroVector);
+										rawMesh.WedgeTangentY.Add(FVector3f::ZeroVector);
+										rawMesh.WedgeTangentZ.Add(FVector3f(normal));
+										rawMesh.WedgeColors.Add(mesh.Colors[vertexIndex]);
+										rawMesh.WedgeTexCoords[0].Add(FVector2f(mesh.UVs[vertexIndex][0][0], mesh.UVs[vertexIndex][0][1]));
+									}
+									rawMesh.FaceMaterialIndices.Add(0);
+									rawMesh.FaceSmoothingMasks.Add(0);
+								}
+							
+							}
+							FStaticMeshSourceModel SrcModel{};
+							SrcModel.CreateSubObjects(StaticMesh);
+							SrcModel.BuildSettings.bRecomputeNormals = false;
+							SrcModel.BuildSettings.bRecomputeTangents = false;
+							SrcModel.BuildSettings.bRemoveDegenerates = true;
+							SrcModel.ReductionSettings.bRecalculateNormals = false;
+							if (!rawMesh.IsValid()) {
+								UE_LOG(LogTemp, Warning, TEXT("RawMesh is not valid!"));
+								continue;
+							}
+							TArray<FStaticMeshSourceModel> temp{};
+							SrcModel.SaveRawMesh(rawMesh);	
+							temp.Add(MoveTemp(SrcModel));
+							StaticMesh->SetSourceModels(MoveTemp(temp));
+							// Do the materials
+							TArray<FStaticMaterial>& materials = StaticMesh->GetStaticMaterials();
+							materials.Empty();
+							for (int i = 0; i < mesh.Surfaces.size(); i++) {
+								auto surface = mesh.Surfaces[i];
+								for (int j = 0; j < surface.Materials.size(); j++) {
+									auto material = surface.Materials[j];
+
+									// find the name of the material
+									FString MaterialInstanceName = (FString(UTF8_TO_TCHAR(material.c_str())));
+									MaterialInstanceName = MaterialInstanceName.Replace(TEXT("*"), TEXT("X"));
+									MaterialInstanceName = MaterialInstanceName.Replace(TEXT("?"), TEXT("Q"));
+									MaterialInstanceName = MaterialInstanceName.Replace(TEXT("!"), TEXT("I"));
+									MaterialInstanceName = MaterialInstanceName.Replace(TEXT(":"), TEXT("_"));
+									MaterialInstanceName = MaterialInstanceName.Replace(TEXT("."), TEXT("-"));
+									MaterialInstanceName = MaterialInstanceName.Replace(TEXT("&"), TEXT("_"));
+									MaterialInstanceName = MaterialInstanceName.Replace(TEXT(" "), TEXT("_"));
+									MaterialInstanceName = MaterialInstanceName.Replace(TEXT("~"), TEXT("_"));
+
+										
+									// find the material
+									UMaterialInstanceConstant* MaterialInstance = nullptr;
+									for (auto mat : Materials) {
+										if (mat->GetName() == MaterialInstanceName) {
+											MaterialInstance = Cast<UMaterialInstanceConstant>(mat);
+											break;
+										}
+									}
+
+									if (MaterialInstance == nullptr) {
+										UE_LOG(LogTemp, Warning, TEXT("Material Instance not found!"));
+										continue;
+									}
+									FStaticMaterial StaticMaterial{};
+									StaticMaterial.MaterialInterface = MaterialInstance;
+									materials.Add(StaticMaterial);
+								}								
+								for (int32 SectionIdx = 0; SectionIdx < materials.Num(); ++SectionIdx)
+								{
+									FMeshSectionInfoMap& sectionInfoMap = StaticMesh->GetSectionInfoMap();
+									FMeshSectionInfo Info = sectionInfoMap.Get(0, SectionIdx);
+									Info.MaterialIndex = SectionIdx;
+									Info.bEnableCollision = true;
+									sectionInfoMap.Set(0, SectionIdx, Info);
+								}
+							}
+							
+						
+
+							StaticMesh->Build(false);
+
+							StaticMesh->MarkPackageDirty();
+							FAssetRegistryModule::AssetCreated(StaticMesh);
+
+							StaticMesh->PostEditChange();
+
+							Package->SetDirtyFlag(true);
+
+							ModelNamePackage.EndsWith(TEXT("/")) ? ModelNamePackage = ModelNamePackage.LeftChop(1) : ModelNamePackage = ModelNamePackage;
+
+							FString PackageFileName = FPackageName::LongPackageNameToFilename(ModelNamePackage, FPackageName::GetAssetPackageExtension());
+
+							FSavePackageArgs SaveArgs;
+							SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+							SaveArgs.Error = GError;
+							SaveArgs.bWarnOfLongFilename = false;
+
+							if (UPackage::SavePackage(Package, StaticMesh, *ModelNamePackage, SaveArgs)) {
+								UE_LOG(LogTemp, Warning, TEXT("Saved Static Mesh!"));
+							}
+							else {
+								UE_LOG(LogTemp, Warning, TEXT("Failed to save Static Mesh!"));
+							}
+							
+
+
+						}
+
+
+						auto mesh = map.meshes[0];
 
 						FString NewPackageName = TEXT("/Game/") + (FString(UTF8_TO_TCHAR(map.Name.c_str()))) + TEXT("/") + (FString(UTF8_TO_TCHAR(mesh.Name.c_str())));
 						UE_LOG(LogTemp, Warning, TEXT("New Package Name: %s"), *NewPackageName);

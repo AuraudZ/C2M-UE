@@ -52,6 +52,7 @@ public class C2M_v2 : ModuleRules
                 "DesktopPlatform",
                 "RHI",
 				"LevelEditor",
+                "EditorScriptingUtilities"
 				// ... add private dependencies that you statically link with here ...	
 			}
             );
